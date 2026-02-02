@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multilabel AI Detector</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 400px; text-align: center; border: 1px solid #eee; }
+        h1 { color: #2c3e50; margin: 0; font-size: 1.8rem; }
+        h1 span { color: #3498db; }
+        
+        .upload-btn { background-color: #3498db; color: white; padding: 12px 25px; border-radius: 50px; cursor: pointer; display: inline-block; font-weight: 600; margin-top: 20px; transition: 0.2s; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
+        .upload-btn:hover { background-color: #2980b9; transform: translateY(-2px); }
+        input[type="file"] { display: none; }
+        
+        #preview { width: 100%; height: 220px; object-fit: cover; border-radius: 12px; margin-top: 20px; display: none; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .loader { display: none; margin-top: 15px; color: #7f8c8d; font-size: 0.9rem; font-weight: 500; }
+        
+        /* Results */
+        #results-container { margin-top: 20px; text-align: left; display: none; }
+        .result-item { margin-bottom: 12px; }
+        .label-row { display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 700; color: #555; margin-bottom: 4px; }
+        .progress-bg { background-color: #ecf0f1; border-radius: 6px; height: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; transition: width 0.8s ease-out; border-radius: 6px; }
+        
+        .high { background-color: #2ecc71; } 
+        .mid { background-color: #f1c40f; }  
+        .low { background-color: #e74c3c; } 
+
+        /* VERDICT */
+        #verdict { margin-top: 20px; padding: 15px; border-radius: 10px; font-weight: 800; display: none; text-transform: uppercase; letter-spacing: 0.5px; font-size: 1rem; line-height: 1.4; }
+        .verdict-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .verdict-doubt { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+
+        /* Re-train Section */
+        #teach-section { display: none; margin-top: 30px; border-top: 2px dashed #eee; padding-top: 20px; animation: fadeIn 0.5s; }
+        .checkbox-group { display: flex; justify-content: center; gap: 15px; margin: 15px 0; }
+        .checkbox-group label { cursor: pointer; font-size: 0.9rem; color: #555; }
+        .teach-btn { background-color: #9b59b6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; transition: 0.2s; }
+        .teach-btn:hover { background-color: #8e44ad; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>🧠 AI <span>Detector</span></h1>
+    <label class="upload-btn">📂 Upload Image
+        <input type="file" id="fileInput" accept="image/*" onchange="processImage()">
+    </label>
+    
+    <img id="preview" src="">
+    <div id="loader" class="loader">Analyzing pixels... 📡</div>
+    
+    <div id="verdict"></div>
+
+    <div id="results-container"></div>
+
+    <div id="teach-section">
+        <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">Did I get it wrong? Mark the reality and teach me:</p>
+        <div class="checkbox-group">
+            <label><input type="checkbox" value="avion"> ✈️ Plane</label>
+            <label><input type="checkbox" value="auto"> 🚗 Car</label>
+            <label><input type="checkbox" value="barco"> ⛵ Boat</label>
+        </div>
+        <button class="teach-btn" onclick="teachModel()">🎓 Retrain Model</button>
+        <div id="teach-msg" style="margin-top:15px; font-size:0.85rem; font-weight: bold; min-height: 20px;"></div>
+    </div>
+</div>
+
+<script>
+    let currentFile = null;
+
+    async function processImage() {
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length > 0) currentFile = fileInput.files[0];
+        else if (!currentFile) return;
+
+        const preview = document.getElementById('preview');
+        const container = document.getElementById('results-container');
+        const verdictEl = document.getElementById('verdict');
+        const teachSec = document.getElementById('teach-section');
+        const loader = document.getElementById('loader');
+
+        if (fileInput.files.length > 0) {
+            preview.style.display = 'block';
+            preview.src = URL.createObjectURL(currentFile);
+        }
+        
+        container.innerHTML = "";
+        verdictEl.style.display = "none";
+        loader.style.display = 'block';
+        if (!teachSec.style.display || teachSec.style.display === 'none') teachSec.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append('file', currentFile);
+
+        try {
+            const response = await fetch('/predict', { method: 'POST', body: formData });
+            const data = await response.json();
+            
+            loader.style.display = 'none';
+            container.style.display = 'block';
+            teachSec.style.display = 'block';
+
+            let html = "";
+            
+            // CORRECCION 1: 'confianza' cambiado a 'confidence' para coincidir con Python
+            const sortedClasses = Object.keys(data.confidence).sort((a,b) => data.confidence[b] - data.confidence[a]);
+            
+            // --- MULTILABEL Verdict Logic ---
+            let detected = [];
+            
+            // Check ALL classes to see which ones exceed 90%
+            for (const className of sortedClasses) {
+                // CORRECCION 2: Usar data.confidence
+                const prob = data.confidence[className];
+                if (prob > 0.90) {
+                    let icon = "";
+                    if(className.includes("avion")) icon = "✈️";
+                    if(className.includes("auto")) icon = "🚗";
+                    if(className.includes("barco")) icon = "⛵";
+                    
+                    let displayName = className.toUpperCase();
+                    if(className === "avion") displayName = "PLANE";
+                    if(className === "auto") displayName = "CAR";
+                    if(className === "barco") displayName = "BOAT";
+
+                    detected.push(`${icon} ${displayName}`);
+                }
+            }
+
+            verdictEl.style.display = "block";
+            if (detected.length > 0) {
+                verdictEl.className = "verdict-success";
+                verdictEl.innerHTML = `DETECTED: <br> ${detected.join(" + ")}!`;
+            } else {
+                verdictEl.className = "verdict-doubt";
+                verdictEl.innerHTML = "🤔 Uncertain Analysis (Doubt)";
+            }
+            // ---------------------------------------
+
+            // Generate bars
+            for (const cls of sortedClasses) {
+                // CORRECCION 3: Usar data.confidence
+                const pct = (data.confidence[cls] * 100).toFixed(1);
+                let color = 'low';
+                if(pct > 40) color = 'mid';
+                if(pct > 70) color = 'high';
+                
+                let labelDisplay = cls.toUpperCase();
+                if(cls === "avion") labelDisplay = "PLANE";
+                if(cls === "auto") labelDisplay = "CAR";
+                if(cls === "barco") labelDisplay = "BOAT";
+
+                html += `
+                    <div class="result-item">
+                        <div class="label-row"><span>${labelDisplay}</span><span>${pct}%</span></div>
+                        <div class="progress-bg"><div class="progress-fill ${color}" style="width:${pct}%"></div></div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+
+        } catch (e) {
+            console.error(e);
+            loader.innerText = "Connection Error 🔌";
+        }
+    }
+
+    async function teachModel() {
+        if (!currentFile) return;
+        const msg = document.getElementById('teach-msg');
+        const checked = Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+        
+        if (checked.length === 0) {
+            msg.innerText = "⚠️ Select at least one option.";
+            msg.style.color = "#e67e22"; return;
+        }
+
+        msg.style.color = "#9b59b6";
+        msg.innerText = "Learning... this will take a few seconds ⏳";
+
+        const formData = new FormData();
+        formData.append('file', currentFile);
+        
+        // CORRECCION 4: 'etiquetas' cambiado a 'labels' para coincidir con Python
+        formData.append('labels', checked.join(' '));
+
+        try {
+            const response = await fetch('/teach', { method: 'POST', body: formData });
+            const data = await response.json();
+            
+            if(data.status === "ok") {
+                msg.innerText = "Done! Verifying improvement... 🔄";
+                msg.style.color = "green";
+                setTimeout(() => { processImage(); msg.innerText = data.message; }, 1500);
+            } else {
+                msg.innerText = "Error: " + data.message;
+                msg.style.color = "red";
+            }
+        } catch (e) {
+            msg.innerText = "Network Error."; msg.style.color = "red";
+        }
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+fastapi: High-performance web framework for building the API.
+
+uvicorn: ASGI server required to run the FastAPI application.
+
+python-multipart: Required by FastAPI to support form parsing and file uploads.
+
+fastai: Deep learning library used for training and inference.
+
+aiofiles: Provides asynchronous file support (essential for non-blocking file saving).
+
+jinja2: Templating engine to render dynamic HTML pages.
+
+mlflow: MLOps tool for experiment tracking and metric visualization.
+
+pandas: Data manipulation tool used to handle the labels.csv dataset.
